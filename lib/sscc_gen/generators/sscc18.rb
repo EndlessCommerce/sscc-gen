@@ -20,7 +20,7 @@ module SsccGen
         return Result.err("serial reference must be digits") unless serial_reference.match?(/\A\d+\z/)
 
         allowed_serial_len = 16 - @gs1_company_prefix.length
-        return Result.err("serial reference too long (max #{allowed_serial_len} digits)") if serial_reference.length > allowed_serial_len
+        serial_reference = serial_reference[-allowed_serial_len..] if serial_reference.length > allowed_serial_len
 
         data_digits = [@extension_digit.to_s, @gs1_company_prefix, serial_reference.rjust(allowed_serial_len, '0')].join
         check = compute_check_digit(data_digits)

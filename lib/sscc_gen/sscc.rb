@@ -23,5 +23,3 @@ module SsccGen
     end
   end
 end
-
-

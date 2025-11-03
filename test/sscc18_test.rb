@@ -74,14 +74,18 @@ class Sscc18Test < Minitest::Test
     )
     refute gen3.generate.success?
 
-    # serial too long
-    long_serial = "9" * 20
+    # serial too long - should truncate
+    long_serial = "12345678901234567890" # 20 digits
     gen4 = SsccGen::Generators::Sscc18.new(
       gs1_company_prefix: "0614141",
       extension_digit: 0,
       serial_reference_provider: DeterministicProvider.new([long_serial])
     )
-    refute gen4.generate.success?
+    result = gen4.generate
+    assert result.success?, "Expected success after truncation, got errors: #{result.errors.inspect}"
+    # With 7-digit prefix, allowed_serial_len = 9, so should take last 9 digits: "234567890"
+    serial_slice = result.value.digits[1 + 7, 9]
+    assert_equal("234567890", serial_slice)
   end
 
   def test_bang_variant_raises
@@ -91,6 +95,40 @@ class Sscc18Test < Minitest::Test
       serial_reference_provider: DeterministicProvider.new(["1"]) 
     )
     assert_raises(SsccGen::Error) { gen.generate! }
+  end
+
+  def test_serial_reference_truncation_ensures_overflow_at_max_prefix_len
+    # With MAX_PREFIX_LEN (10), allowed_serial_len = 6
+    # Serial should be truncated to trailing 6 digits, ensuring overflow at 10^6
+    prefix = "1" * 10 # MAX_PREFIX_LEN
+    long_serial = "123456789012345" # 15 digits
+    
+    gen = SsccGen::Generators::Sscc18.new(
+      gs1_company_prefix: prefix,
+      extension_digit: 0,
+      serial_reference_provider: DeterministicProvider.new([long_serial])
+    )
+    
+    result = gen.generate
+    assert result.success?, "Expected success after truncation, got errors: #{result.errors.inspect}"
+    
+    # Should take last 6 digits: "012345"
+    allowed_serial_len = 16 - prefix.length # 6
+    serial_slice = result.value.digits[1 + prefix.length, allowed_serial_len]
+    assert_equal("012345", serial_slice, "Serial should be truncated to trailing 6 digits")
+    
+    # Verify that when serial reaches max (999999), next would overflow to 000000
+    max_serial = "999999"
+    gen2 = SsccGen::Generators::Sscc18.new(
+      gs1_company_prefix: prefix,
+      extension_digit: 0,
+      serial_reference_provider: DeterministicProvider.new(["123456789012345#{max_serial}"]) # ends with 999999
+    )
+    
+    result2 = gen2.generate
+    assert result2.success?
+    serial_slice2 = result2.value.digits[1 + prefix.length, allowed_serial_len]
+    assert_equal(max_serial, serial_slice2, "Max serial should fit within 6 digits")
   end
 
   private
