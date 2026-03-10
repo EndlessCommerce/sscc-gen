@@ -20,10 +20,13 @@ module SsccGen
         return Result.err("serial reference must be digits") unless serial_reference.match?(/\A\d+\z/)
 
         allowed_serial_len = 16 - @gs1_company_prefix.length
-        serial_reference = serial_reference[-allowed_serial_len..] if serial_reference.length > allowed_serial_len
+        if serial_reference.length > allowed_serial_len
+          raise Error, "serial reference '#{serial_reference}' exceeds maximum length of #{allowed_serial_len} " \
+                       "digits for GS1 company prefix of length #{@gs1_company_prefix.length}"
+        end
 
         data_digits = [@extension_digit.to_s, @gs1_company_prefix, serial_reference.rjust(allowed_serial_len, '0')].join
-        check = compute_check_digit(data_digits)
+        check = CheckDigit.compute(data_digits)
         sscc_digits = data_digits + check.to_s
 
         Result.ok(SSCC.new(sscc_digits))
@@ -58,16 +61,6 @@ module SsccGen
         end
 
         errors
-      end
-
-      # GS1 Mod 10 (weight 3,1 from rightmost data digit)
-      def compute_check_digit(data_digits)
-        digits = data_digits.chars.map(&:to_i)
-        sum = digits.reverse.each_with_index.sum do |d, i|
-          weight = (i.odd? ? 3 : 1)
-          d * weight
-        end
-        (10 - (sum % 10)) % 10
       end
 
       def next_serial_reference

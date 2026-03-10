@@ -74,7 +74,7 @@ class Sscc18Test < Minitest::Test
     )
     refute gen3.generate.success?
 
-    # serial too long - should truncate
+    # serial too long - should error
     long_serial = "12345678901234567890" # 20 digits
     gen4 = SsccGen::Generators::Sscc18.new(
       gs1_company_prefix: "0614141",
@@ -82,10 +82,8 @@ class Sscc18Test < Minitest::Test
       serial_reference_provider: DeterministicProvider.new([long_serial])
     )
     result = gen4.generate
-    assert result.success?, "Expected success after truncation, got errors: #{result.errors.inspect}"
-    # With 7-digit prefix, allowed_serial_len = 9, so should take last 9 digits: "234567890"
-    serial_slice = result.value.digits[1 + 7, 9]
-    assert_equal("234567890", serial_slice)
+    refute result.success?, "Expected error for overflowing serial reference"
+    assert result.errors.any? { |e| e.include?("exceeds maximum length") }
   end
 
   def test_bang_variant_raises
@@ -97,45 +95,44 @@ class Sscc18Test < Minitest::Test
     assert_raises(SsccGen::Error) { gen.generate! }
   end
 
-  def test_serial_reference_truncation_ensures_overflow_at_max_prefix_len
+  def test_serial_reference_overflow_raises_error_at_max_prefix_len
     # With MAX_PREFIX_LEN (10), allowed_serial_len = 6
-    # Serial should be truncated to trailing 6 digits, ensuring overflow at 10^6
+    # Serial longer than 6 digits should raise an error instead of silently truncating
     prefix = "1" * 10 # MAX_PREFIX_LEN
-    long_serial = "123456789012345" # 15 digits
-    
+    long_serial = "123456789012345" # 15 digits, exceeds allowed 6
+
     gen = SsccGen::Generators::Sscc18.new(
       gs1_company_prefix: prefix,
       extension_digit: 0,
       serial_reference_provider: DeterministicProvider.new([long_serial])
     )
-    
+
     result = gen.generate
-    assert result.success?, "Expected success after truncation, got errors: #{result.errors.inspect}"
-    
-    # Should take last 6 digits: "012345"
-    allowed_serial_len = 16 - prefix.length # 6
-    serial_slice = result.value.digits[1 + prefix.length, allowed_serial_len]
-    assert_equal("012345", serial_slice, "Serial should be truncated to trailing 6 digits")
-    
-    # Verify that when serial reaches max (999999), next would overflow to 000000
-    max_serial = "999999"
-    gen2 = SsccGen::Generators::Sscc18.new(
+    refute result.success?, "Expected error for overflowing serial reference"
+    assert result.errors.any? { |e| e.include?("exceeds maximum length") }
+  end
+
+  def test_max_serial_within_allowed_length_succeeds
+    prefix = "1" * 10 # MAX_PREFIX_LEN, allowed_serial_len = 6
+    max_serial = "999999" # exactly 6 digits — should succeed
+
+    gen = SsccGen::Generators::Sscc18.new(
       gs1_company_prefix: prefix,
       extension_digit: 0,
-      serial_reference_provider: DeterministicProvider.new(["123456789012345#{max_serial}"]) # ends with 999999
+      serial_reference_provider: DeterministicProvider.new([max_serial])
     )
-    
-    result2 = gen2.generate
-    assert result2.success?
-    serial_slice2 = result2.value.digits[1 + prefix.length, allowed_serial_len]
-    assert_equal(max_serial, serial_slice2, "Max serial should fit within 6 digits")
+
+    result = gen.generate
+    assert result.success?, "Expected success for serial within allowed length, got: #{result.errors.inspect}"
+    serial_slice = result.value.digits[1 + prefix.length, 6]
+    assert_equal(max_serial, serial_slice)
   end
 
   private
 
   def compute_check_digit(data_digits)
     digits = data_digits.chars.map(&:to_i)
-    sum = digits.reverse.each_with_index.sum { |d, i| d * (i.odd? ? 3 : 1) }
+    sum = digits.reverse.each_with_index.sum { |d, i| d * (i.even? ? 3 : 1) }
     (10 - (sum % 10)) % 10
   end
 end
