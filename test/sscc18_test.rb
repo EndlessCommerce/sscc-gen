@@ -128,6 +128,32 @@ class Sscc18Test < Minitest::Test
     assert_equal(max_serial, serial_slice)
   end
 
+  def test_overflow_raises_when_serial_exceeds_allowed_length
+    prefix = "1" * 10 # 10-digit prefix → allowed_serial_len = 6 (max serial: 999,999)
+    overflow_serial = "1010454" # 7 digits, exceeds allowed 6
+
+    gen = SsccGen::Generators::Sscc18.new(
+      gs1_company_prefix: prefix,
+      serial_reference_provider: DeterministicProvider.new([overflow_serial])
+    )
+
+    error = assert_raises(SsccGen::Error) { gen.generate! }
+    assert_match(/exceeds maximum length/, error.message)
+  end
+
+  def test_overflow_accepts_serial_within_allowed_length
+    prefix = "1" * 10 # 10-digit prefix → allowed_serial_len = 6
+    serial = "999999" # exactly 6 digits
+
+    gen = SsccGen::Generators::Sscc18.new(
+      gs1_company_prefix: prefix,
+      serial_reference_provider: DeterministicProvider.new([serial])
+    )
+
+    sscc = gen.generate!
+    assert_instance_of SsccGen::SSCC, sscc
+  end
+
   private
 
   def compute_check_digit(data_digits)
