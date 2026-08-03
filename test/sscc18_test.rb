@@ -49,6 +49,34 @@ class Sscc18Test < Minitest::Test
     assert_equal("0" * (allowed_serial_len - 1) + "1", serial_slice)
   end
 
+  def test_long_prefixes_up_to_twelve_digits
+    [11, 12].each do |prefix_len|
+      prefix = "614141234567"[0, prefix_len]
+      gen = SsccGen::Generators::Sscc18.new(
+        gs1_company_prefix: prefix,
+        extension_digit: 3,
+        serial_reference_provider: DeterministicProvider.new(["7"])
+      )
+
+      result = gen.generate
+      assert result.success?, "Expected success for #{prefix_len}-digit prefix, got: #{result.errors.inspect}"
+
+      sscc = result.value
+      allowed_serial_len = 16 - prefix_len
+      assert_equal "3#{prefix}#{'0' * (allowed_serial_len - 1)}7", sscc.digits[0, 17]
+      assert_equal compute_check_digit(sscc.digits[0, 17]), sscc.check_digit
+    end
+  end
+
+  def test_thirteen_digit_prefix_rejected
+    gen = SsccGen::Generators::Sscc18.new(
+      gs1_company_prefix: "6141412345678",
+      extension_digit: 0,
+      serial_reference_provider: DeterministicProvider.new(["1"])
+    )
+    refute gen.generate.success?
+  end
+
   def test_validation_errors
     # bad prefix
     gen1 = SsccGen::Generators::Sscc18.new(

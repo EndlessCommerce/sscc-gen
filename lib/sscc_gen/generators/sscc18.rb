@@ -4,7 +4,7 @@ module SsccGen
   module Generators
     class Sscc18
       MIN_PREFIX_LEN = 6
-      MAX_PREFIX_LEN = 10
+      MAX_PREFIX_LEN = 12
 
       def initialize(gs1_company_prefix:, serial_reference_provider:, extension_digit: 0)
         @gs1_company_prefix = gs1_company_prefix
